@@ -7,7 +7,8 @@ Git clone
 git clone https://github.com/xcosmosbox/nanobot.git
 cd nanobot
 python3 -m venv .venv
-pip install -e .
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
 > We use the command `pip install -e .` to install the nanobot package as a local module, which allows us to use the `nanobot` command in the terminal.
