@@ -1,0 +1,16 @@
+You must modify nanobot source code. The goal is to add a built-in ScreenshotTool (macOS only) for "capture screen and send to the user".
+
+Hard requirements:
+1. Add tool file: nanobot/agent/tools/screenshot.py
+2. Tool name must be screenshot; parameters must include at least: mode(full/window/area), save_dir(optional), send(bool, default false)
+3. Use macOS screencapture command; on non-macOS, return a clear error
+4. If Screen Recording permission is missing, return actionable fix instructions
+5. Screenshot filename must include a timestamp; default directory is workspace/tmp/screenshots
+6. Register the tool in AgentLoop (guarded by a config switch, default off)
+7. Add tools.screenshot.enabled in config schema (default false)
+8. If send=true, use the message tool to send the image back to the current session; if send fails, fallback to returning local path
+9. Add at least 1 test file for core branches (at least non-macOS branch, param validation, or path generation)
+10. Only modify files related to this feature; do not modify README; finally output changed file list and test results
+
+Validation command:
+- pytest -q tests -k screenshot
