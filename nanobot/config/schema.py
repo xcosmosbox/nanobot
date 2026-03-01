@@ -299,6 +299,12 @@ class ExecToolConfig(Base):
     path_append: str = ""
 
 
+class ScreenshotToolConfig(Base):
+    """Screenshot tool configuration (macOS only)."""
+
+    enabled: bool = False  # Enable/disable the screenshot tool
+
+
 class MCPServerConfig(Base):
     """MCP server connection configuration (stdio or HTTP)."""
 
@@ -315,6 +321,7 @@ class ToolsConfig(Base):
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
+    screenshot: ScreenshotToolConfig = Field(default_factory=ScreenshotToolConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 

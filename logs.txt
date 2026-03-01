@@ -1,0 +1,74 @@
+  ↳ I'll help you add a built-in ScreenshotTool to nanobot. Let me start by exploring the workspace
+structure to understand how other tools are implemented.
+  ↳ Now let me look at the config schema:
+  ↳ Now I have a good understanding. Let me implement the screenshot tool step by step.
+
+First, let me create the screenshot.py tool:
+  ↳ Now let me add the config schema for the screenshot tool:
+  ↳ Now add screenshot to the ToolsConfig class:
+  ↳ Now let me register the tool in AgentLoop:
+  ↳ Let me read the first 130 lines to see the imports and init method:
+  ↳ Now add screenshot_config to the __init__ parameters:
+  ↳ Now let me find where AgentLoop is instantiated to pass the screenshot_config:
+  ↳ Now let me create a test file for the screenshot tool:
+  ↳ Now let's run the tests to verify everything works:
+
+🐈 nanobot
+## Summary
+
+I've successfully added the built-in ScreenshotTool to nanobot. Here's what was implemented:
+
+### Changed Files
+
+| File | Change |
+|------|--------|
+| `nanobot/agent/tools/screenshot.py` | **NEW** - Screenshot tool implementation |
+| `nanobot/config/schema.py` | **MODIFIED** - Added `ScreenshotToolConfig` |
+| `nanobot/agent/loop.py` | **MODIFIED** - Register screenshot tool (guarded by config) |
+| `nanobot/cli/commands.py` | **MODIFIED** - Pass screenshot_config to AgentLoop |
+| `tests/test_screenshot.py` | **NEW** - 19 test cases |
+
+### Requirements Met
+
+1. ✅ **Work in minimax worktree** - All changes in minimax worktree
+2. ✅ **Tool at agent/tools/screenshot.py** - Created with proper Tool base class
+3. ✅ **Parameters**: `mode` (full/window/area), `save_dir` (optional), `send` (bool, default 
+false)
+4. ✅ **macOS screencapture** - Uses native command; returns clear error on non-macOS
+5. ✅ **Permission handling** - Checks Screen Recording permission, returns actionable fix 
+instructions
+6. ✅ **Timestamped filename** - Format: `screenshot_YYYYMMDD_HHMMSS.png`
+7. ✅ **Default save dir** - `workspace/tmp/screenshots`
+8. ✅ **Config switch** - Registered in AgentLoop, guarded by `tools.screenshot.enabled` (default: 
+false)
+9. ✅ **Config schema** - Added `tools.screenshot.enabled` in schema
+10. ✅ **Send with fallback** - Uses message tool callback; falls back to local path on error
+11. ✅ **Test coverage** - 19 tests covering non-macOS branch, param validation, path generation
+
+### Test Results
+
+```
+pytest -q tests/test_screenshot.py
+................... 19 passed in 2.16s
+```
+
+### Usage
+
+To enable the screenshot tool, add to your config:
+
+```json
+{
+  "tools": {
+    "screenshot": {
+      "enabled": true
+    }
+  }
+}
+```
+
+Then use in chat:
+- `screenshot(mode="full")` - Capture full screen
+- `screenshot(mode="window")` - Select a window
+- `screenshot(mode="area")` - Drag to select area
+- `screenshot(mode="full", send=true)` - Capture and send to current session
+

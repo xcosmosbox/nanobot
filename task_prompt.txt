@@ -1,7 +1,7 @@
 You must modify nanobot source code. The goal is to add a built-in ScreenshotTool (macOS only) for "capture screen and send to the user".
 
 Hard requirements:
-1. You must work in the current worktree.
+1. You must work in the minimax worktree.
 2. Add tool to agent/tools/screenshot.py
 3. Tool name must be screenshot; parameters must include at least: mode(full/window/area), save_dir(optional), send(bool, default false)
 4. Use macOS screencapture command; on non-macOS, return a clear error
