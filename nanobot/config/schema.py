@@ -310,11 +310,19 @@ class MCPServerConfig(Base):
     tool_timeout: int = 30  # Seconds before a tool call is cancelled
 
 
+class ScreenshotConfig(Base):
+    """Screenshot tool configuration."""
+
+    enabled: bool = False  # Default disabled for security
+    default_save_dir: str | None = None  # Optional custom save directory
+
+
 class ToolsConfig(Base):
     """Tools configuration."""
 
     web: WebToolsConfig = Field(default_factory=WebToolsConfig)
     exec: ExecToolConfig = Field(default_factory=ExecToolConfig)
+    screenshot: ScreenshotConfig = Field(default_factory=ScreenshotConfig)
     restrict_to_workspace: bool = False  # If true, restrict all tool access to workspace directory
     mcp_servers: dict[str, MCPServerConfig] = Field(default_factory=dict)
 
