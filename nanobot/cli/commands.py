@@ -2,10 +2,12 @@
 
 import asyncio
 import os
+import platform
 import select
 import signal
 import sys
 from pathlib import Path
+from typing import Callable
 
 import typer
 from prompt_toolkit import PromptSession
@@ -241,12 +243,11 @@ def _make_provider(config: Config):
 # ============================================================================
 
 
-@app.command()
-def gateway(
-    port: int = typer.Option(18790, "--port", "-p", help="Gateway port"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+def run_gateway_foreground_loop(
+    port: int = 18790,
+    verbose: bool = False,
 ):
-    """Start the nanobot gateway."""
+    """Run gateway using the legacy foreground execution path."""
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.channels.manager import ChannelManager
@@ -417,6 +418,147 @@ def gateway(
             await channels.stop_all()
 
     asyncio.run(run())
+
+
+gateway_app = typer.Typer(
+    help="Start and manage the nanobot gateway runtime.",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+app.add_typer(gateway_app, name="gateway")
+
+
+def _resolve_gateway_cli_mode(*, foreground: bool, background: bool) -> str | None:
+    if foreground and background:
+        console.print("[red]Error: --foreground and --background cannot be used together.[/red]")
+        raise typer.Exit(1)
+    if foreground:
+        return "foreground"
+    if background:
+        return "background"
+    return None
+
+
+def _build_gateway_runtime_facade(
+    *,
+    cli_mode: str | None,
+    run_foreground_loop: Callable[[int, bool], None] | None = None,
+):
+    from nanobot.gateway_runtime.facade import GatewayRuntimeFacade
+    from nanobot.gateway_runtime.policy import resolve_runtime_policy
+
+    resolved_policy = resolve_runtime_policy(
+        cli_mode=cli_mode,
+        platform_name=platform.system(),
+    )
+    facade = GatewayRuntimeFacade(
+        run_foreground_loop=run_foreground_loop,
+        policy=resolved_policy,
+    )
+    return facade, resolved_policy
+
+
+@gateway_app.callback(invoke_without_command=True)
+def gateway(
+    ctx: typer.Context,
+    port: int = typer.Option(18790, "--port", "-p", help="Gateway port"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+    foreground: bool = typer.Option(False, "--foreground", help="Force foreground legacy mode"),
+    background: bool = typer.Option(False, "--background", help="Request background managed mode"),
+):
+    """Start the nanobot gateway."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    from nanobot.gateway_runtime.models import GatewayStartOptions
+
+    cli_mode = _resolve_gateway_cli_mode(foreground=foreground, background=background)
+    facade, policy = _build_gateway_runtime_facade(
+        cli_mode=cli_mode,
+        run_foreground_loop=run_gateway_foreground_loop,
+    )
+    console.print(
+        "[dim]"
+        f"Gateway runtime policy: mode={policy.mode.value} "
+        f"reason={policy.reason} platform={policy.platform}"
+        "[/dim]"
+    )
+    result = facade.start(
+        GatewayStartOptions(
+            port=port,
+            verbose=verbose,
+            cli_mode=cli_mode,
+        )
+    )
+    if not result.started:
+        console.print(f"[red]Gateway start failed: {result.message}[/red]")
+        raise typer.Exit(1)
+
+
+@gateway_app.command("restart")
+def gateway_restart(
+    port: int = typer.Option(18790, "--port", "-p", help="Gateway port"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
+    timeout_s: int = typer.Option(20, "--timeout", help="Restart timeout in seconds"),
+    foreground: bool = typer.Option(False, "--foreground", help="Force foreground legacy mode"),
+    background: bool = typer.Option(False, "--background", help="Request background managed mode"),
+):
+    """Restart gateway with unified runtime semantics."""
+    from nanobot.gateway_runtime.models import GatewayStartOptions
+
+    cli_mode = _resolve_gateway_cli_mode(foreground=foreground, background=background)
+    facade, policy = _build_gateway_runtime_facade(
+        cli_mode=cli_mode,
+        run_foreground_loop=run_gateway_foreground_loop,
+    )
+    result = facade.restart(
+        GatewayStartOptions(
+            port=port,
+            verbose=verbose,
+            cli_mode=cli_mode,
+        ),
+        timeout_s=timeout_s,
+    )
+    console.print(
+        f"Gateway restart: {result.message} "
+        f"(mode={policy.mode.value}, reason={policy.reason})"
+    )
+
+
+@gateway_app.command("status")
+def gateway_status(
+    foreground: bool = typer.Option(False, "--foreground", help="Force foreground legacy mode"),
+    background: bool = typer.Option(False, "--background", help="Request background managed mode"),
+):
+    """Show gateway runtime status."""
+    cli_mode = _resolve_gateway_cli_mode(foreground=foreground, background=background)
+    facade, _ = _build_gateway_runtime_facade(cli_mode=cli_mode)
+    status = facade.status()
+
+    console.print(f"Mode: {status.mode.value}")
+    console.print(f"Reason: {status.reason}")
+    console.print(f"Platform: {status.platform}")
+    console.print(f"Rollout: {status.rollout_stage}")
+    console.print(f"Running: {'yes' if status.running else 'no'}")
+    if status.pid is not None:
+        console.print(f"PID: {status.pid}")
+    if status.log_path is not None:
+        console.print(f"Logs: {status.log_path}")
+
+
+@gateway_app.command("logs")
+def gateway_logs(
+    follow: bool = typer.Option(True, "--follow/--no-follow", help="Follow gateway log output"),
+    tail: int = typer.Option(200, "--tail", help="Number of recent lines to show"),
+    foreground: bool = typer.Option(False, "--foreground", help="Force foreground legacy mode"),
+    background: bool = typer.Option(False, "--background", help="Request background managed mode"),
+):
+    """Show gateway runtime logs."""
+    cli_mode = _resolve_gateway_cli_mode(foreground=foreground, background=background)
+    facade, _ = _build_gateway_runtime_facade(cli_mode=cli_mode)
+    code = facade.logs(follow=follow, tail=tail)
+    if code != 0:
+        raise typer.Exit(code)
 
 
 

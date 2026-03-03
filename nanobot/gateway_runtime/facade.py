@@ -1,0 +1,68 @@
+"""Runtime facade that hides platform policy and adapter selection."""
+
+from __future__ import annotations
+
+from typing import Callable
+
+from nanobot.gateway_runtime.adapters.base import RuntimeAdapter
+from nanobot.gateway_runtime.adapters.foreground_legacy import ForegroundLegacyAdapter
+from nanobot.gateway_runtime.models import (
+    GatewayStartOptions,
+    GatewayStatus,
+    RestartResult,
+    RuntimeMode,
+    RuntimePolicy,
+    StartResult,
+)
+from nanobot.gateway_runtime.policy import resolve_runtime_policy
+from nanobot.gateway_runtime.state_store import GatewayStateStore
+
+
+class GatewayRuntimeFacade:
+    """Gateway runtime command facade used by CLI entry points."""
+
+    def __init__(
+        self,
+        *,
+        run_foreground_loop: Callable[[int, bool], None] | None = None,
+        policy: RuntimePolicy | None = None,
+        state_store: GatewayStateStore | None = None,
+        adapter: RuntimeAdapter | None = None,
+    ):
+        self._policy = policy or resolve_runtime_policy()
+        self._state_store = state_store or GatewayStateStore()
+        self._run_foreground_loop = run_foreground_loop
+        self._adapter = adapter or self._build_adapter()
+
+    def start(self, options: GatewayStartOptions) -> StartResult:
+        return self._adapter.start(options)
+
+    def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+        return self._adapter.restart(options, timeout_s=timeout_s)
+
+    def status(self) -> GatewayStatus:
+        return self._adapter.status()
+
+    def logs(self, follow: bool = True, tail: int = 200) -> int:
+        return self._adapter.logs(follow=follow, tail=tail)
+
+    def _build_adapter(self) -> RuntimeAdapter:
+        if self._policy.mode is RuntimeMode.FOREGROUND_LEGACY:
+            return ForegroundLegacyAdapter(
+                run_foreground_loop=self._run_foreground_loop,
+                policy=self._policy,
+                state_store=self._state_store,
+            )
+
+        # Background adapter is intentionally not enabled in this framework phase.
+        fallback_policy = RuntimePolicy(
+            mode=RuntimeMode.FOREGROUND_LEGACY,
+            reason="fallback_to_legacy_foreground",
+            platform=self._policy.platform,
+            rollout_stage=self._policy.rollout_stage,
+        )
+        return ForegroundLegacyAdapter(
+            run_foreground_loop=self._run_foreground_loop,
+            policy=fallback_policy,
+            state_store=self._state_store,
+        )

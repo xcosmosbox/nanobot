@@ -54,6 +54,15 @@ class RestartResult:
 
 
 @dataclass(frozen=True)
+class StopResult:
+    """Result from runtime stop operation."""
+
+    stopped: bool
+    message: str
+    mode: RuntimeMode
+
+
+@dataclass(frozen=True)
 class GatewayStatus:
     """Status payload exposed by runtime facade and adapters."""
 
