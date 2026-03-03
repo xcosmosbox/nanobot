@@ -28,7 +28,7 @@ def resolve_runtime_policy(
     platform_name: str | None = None,
 ) -> RuntimePolicy:
     """Resolve runtime policy with precedence: CLI > kill switch > env > rollout."""
-    env_map = env or os.environ
+    env_map = os.environ if env is None else env
     target_platform = platform_name or platform.system()
     rollout_stage = ROLLOUT_BY_PLATFORM.get(target_platform, "off")
 

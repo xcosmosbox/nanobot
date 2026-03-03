@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 
 from nanobot.config.loader import get_data_dir
@@ -28,18 +30,30 @@ class GatewayStateStore:
     def write_state(self, payload: GatewayRuntimeState) -> None:
         """Persist structured runtime metadata (mode/reason/timestamps, etc.)."""
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        with self.state_path.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        # Write to a temp file in the same directory, then atomically swap.
+        fd, tmp_name = tempfile.mkstemp(
+            prefix="gateway.state.",
+            suffix=".tmp",
+            dir=self.run_dir,
+        )
+        tmp_path = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
+            tmp_path.replace(self.state_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     def read_state(self) -> GatewayRuntimeState | None:
-        """Load runtime state; self-heal by removing corrupted state files."""
+        """Load runtime state; treat parse errors as transient read failures."""
         if not self.state_path.exists():
             return None
         try:
             with self.state_path.open(encoding="utf-8") as handle:
                 loaded = json.load(handle)
         except (json.JSONDecodeError, OSError, ValueError):
-            self.state_path.unlink(missing_ok=True)
             return None
         if isinstance(loaded, dict):
             return loaded

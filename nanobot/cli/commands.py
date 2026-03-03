@@ -470,6 +470,38 @@ def _build_gateway_runtime_facade(
     return facade, resolved_policy
 
 
+def _validate_gateway_group_options_for_subcommand(
+    *,
+    port: int,
+    verbose: bool,
+    foreground: bool,
+    background: bool,
+) -> None:
+    """Reject group-level options when a gateway subcommand is invoked."""
+    invalid_options: list[str] = []
+    if port != 18790:
+        invalid_options.append("--port/-p")
+    if verbose:
+        invalid_options.append("--verbose/-v")
+    if foreground:
+        invalid_options.append("--foreground")
+    if background:
+        invalid_options.append("--background")
+
+    if not invalid_options:
+        return
+
+    joined = ", ".join(invalid_options)
+    console.print(
+        "[red]Error: "
+        f"gateway group options ({joined}) cannot be used before gateway subcommands. "
+        "Pass options after the subcommand, e.g. "
+        "`nanobot gateway status --background` or `nanobot gateway restart --port 19000`."
+        "[/red]"
+    )
+    raise typer.Exit(1)
+
+
 @gateway_app.callback(invoke_without_command=True)
 def gateway(
     ctx: typer.Context,
@@ -481,6 +513,12 @@ def gateway(
     """Start the nanobot gateway."""
     # If a subcommand was specified (restart/status/logs), do not run start().
     if ctx.invoked_subcommand is not None:
+        _validate_gateway_group_options_for_subcommand(
+            port=port,
+            verbose=verbose,
+            foreground=foreground,
+            background=background,
+        )
         return
 
     from nanobot.gateway_runtime.models import GatewayStartOptions
