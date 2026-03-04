@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 import typer
+from click.core import ParameterSource
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.history import FileHistory
@@ -472,20 +473,29 @@ def _build_gateway_runtime_facade(
 
 def _validate_gateway_group_options_for_subcommand(
     *,
+    ctx: typer.Context,
     port: int,
     verbose: bool,
     foreground: bool,
     background: bool,
 ) -> None:
     """Reject group-level options when a gateway subcommand is invoked."""
+    has_source_api = hasattr(ctx, "get_parameter_source")
+
+    def _from_commandline(name: str) -> bool:
+        if not has_source_api:
+            return False
+        source = ctx.get_parameter_source(name)
+        return source == ParameterSource.COMMANDLINE
+
     invalid_options: list[str] = []
-    if port != 18790:
+    if _from_commandline("port") or (not has_source_api and port != 18790):
         invalid_options.append("--port/-p")
-    if verbose:
+    if _from_commandline("verbose") or (not has_source_api and verbose):
         invalid_options.append("--verbose/-v")
-    if foreground:
+    if _from_commandline("foreground") or (not has_source_api and foreground):
         invalid_options.append("--foreground")
-    if background:
+    if _from_commandline("background") or (not has_source_api and background):
         invalid_options.append("--background")
 
     if not invalid_options:
@@ -514,6 +524,7 @@ def gateway(
     # If a subcommand was specified (restart/status/logs), do not run start().
     if ctx.invoked_subcommand is not None:
         _validate_gateway_group_options_for_subcommand(
+            ctx=ctx,
             port=port,
             verbose=verbose,
             foreground=foreground,
