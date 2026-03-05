@@ -6,6 +6,7 @@ from typing import Callable
 
 from nanobot.gateway_runtime.adapters.base import RuntimeAdapter
 from nanobot.gateway_runtime.adapters.foreground_legacy import ForegroundLegacyAdapter
+from nanobot.gateway_runtime.adapters.posix_daemon import PosixDaemonAdapter
 from nanobot.gateway_runtime.models import (
     GatewayStartOptions,
     GatewayStatus,
@@ -41,7 +42,19 @@ class GatewayRuntimeFacade:
 
     def start(self, options: GatewayStartOptions) -> StartResult:
         """Start gateway using the selected adapter."""
-        return self._adapter.start(options)
+        try:
+            return self._adapter.start(options)
+        except Exception:
+            if not self._should_auto_fallback(options):
+                raise
+            fallback_policy = RuntimePolicy(
+                mode=RuntimeMode.FOREGROUND_LEGACY,
+                reason="fallback_to_legacy_foreground",
+                platform=self._policy.platform,
+                rollout_stage=self._policy.rollout_stage,
+            )
+            fallback_adapter = self._build_legacy_adapter(policy=fallback_policy)
+            return fallback_adapter.start(options)
 
     def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
         """Restart gateway using adapter semantics for current runtime mode."""
@@ -56,24 +69,35 @@ class GatewayRuntimeFacade:
         return self._adapter.logs(follow=follow, tail=tail)
 
     def _build_adapter(self) -> RuntimeAdapter:
-        """Select adapter by policy, with legacy fallback in framework phase."""
+        """Select adapter by policy with platform-aware managed runtime support."""
         if self._policy.mode is RuntimeMode.FOREGROUND_LEGACY:
-            return ForegroundLegacyAdapter(
-                run_foreground_loop=self._run_foreground_loop,
+            return self._build_legacy_adapter(policy=self._policy)
+
+        if self._policy.platform == "Darwin":
+            return PosixDaemonAdapter(
                 policy=self._policy,
                 state_store=self._state_store,
             )
 
-        # Framework phase does not ship managed daemon adapter yet.
-        # Keep command compatibility by downgrading to legacy path explicitly.
         fallback_policy = RuntimePolicy(
             mode=RuntimeMode.FOREGROUND_LEGACY,
             reason="fallback_to_legacy_foreground",
             platform=self._policy.platform,
             rollout_stage=self._policy.rollout_stage,
         )
+        return self._build_legacy_adapter(policy=fallback_policy)
+
+    def _build_legacy_adapter(self, *, policy: RuntimePolicy) -> RuntimeAdapter:
         return ForegroundLegacyAdapter(
             run_foreground_loop=self._run_foreground_loop,
-            policy=fallback_policy,
+            policy=policy,
             state_store=self._state_store,
         )
+
+    def _should_auto_fallback(self, options: GatewayStartOptions) -> bool:
+        if self._policy.mode is not RuntimeMode.BACKGROUND_MANAGED:
+            return False
+        if self._policy.platform != "Darwin":
+            return False
+        # auto mode: no explicit CLI override; keep command resilient on default path.
+        return options.cli_mode is None

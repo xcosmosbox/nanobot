@@ -81,3 +81,16 @@ class GatewayStateStore:
         """Return standard gateway log path, creating log directory if needed."""
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         return self.logs_dir / "gateway.log"
+
+    def read_log_tail(self, tail: int = 200) -> list[str]:
+        """Read last N lines from gateway log file."""
+        if tail <= 0:
+            return []
+        log_path = self.resolve_log_path()
+        if not log_path.exists():
+            return []
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            return []
+        return lines[-tail:]

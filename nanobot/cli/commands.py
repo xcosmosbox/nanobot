@@ -519,8 +519,18 @@ def gateway(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
     foreground: bool = typer.Option(False, "--foreground", help="Force foreground legacy mode"),
     background: bool = typer.Option(False, "--background", help="Request background managed mode"),
+    runtime_child: bool = typer.Option(
+        False,
+        "--runtime-child",
+        hidden=True,
+        help="Internal flag: run foreground loop directly inside daemon child process.",
+    ),
 ):
     """Start the nanobot gateway."""
+    if runtime_child:
+        run_gateway_foreground_loop(port, verbose)
+        return
+
     # If a subcommand was specified (restart/status/logs), do not run start().
     if ctx.invoked_subcommand is not None:
         _validate_gateway_group_options_for_subcommand(
@@ -546,13 +556,18 @@ def gateway(
         f"reason={policy.reason} platform={policy.platform}"
         "[/dim]"
     )
-    result = facade.start(
-        GatewayStartOptions(
-            port=port,
-            verbose=verbose,
-            cli_mode=cli_mode,
+    try:
+        result = facade.start(
+            GatewayStartOptions(
+                port=port,
+                verbose=verbose,
+                cli_mode=cli_mode,
+            )
         )
-    )
+    except Exception as exc:
+        console.print(f"[red]Gateway start failed: {exc}[/red]")
+        raise typer.Exit(1)
+
     if not result.started:
         console.print(f"[red]Gateway start failed: {result.message}[/red]")
         raise typer.Exit(1)
@@ -608,6 +623,8 @@ def gateway_status(
     console.print(f"Running: {'yes' if status.running else 'no'}")
     if status.pid is not None:
         console.print(f"PID: {status.pid}")
+    if status.started_at is not None:
+        console.print(f"Started At: {status.started_at}")
     if status.log_path is not None:
         console.print(f"Logs: {status.log_path}")
 

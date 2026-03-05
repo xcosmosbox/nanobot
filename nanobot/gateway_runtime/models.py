@@ -95,3 +95,4 @@ class GatewayStatus:
     rollout_stage: str
     pid: int | None = None
     log_path: Path | None = None
+    started_at: str | None = None
