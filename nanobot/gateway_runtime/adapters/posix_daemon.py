@@ -56,18 +56,22 @@ class PosixDaemonAdapter:
 
         pid = int(process.pid)  # type: ignore[attr-defined]
         started_at = _utc_now()
-        self._state_store.write_pid(pid)
-        self._state_store.write_state(
-            {
-                "mode": RuntimeMode.BACKGROUND_MANAGED.value,
-                "reason": self._policy.reason,
-                "platform": self._policy.platform,
-                "rollout_stage": self._policy.rollout_stage,
-                "pid": pid,
-                "started_at": started_at,
-                "log_path": str(log_path),
-            }
-        )
+        try:
+            self._state_store.write_pid(pid)
+            self._state_store.write_state(
+                {
+                    "mode": RuntimeMode.BACKGROUND_MANAGED.value,
+                    "reason": self._policy.reason,
+                    "platform": self._policy.platform,
+                    "rollout_stage": self._policy.rollout_stage,
+                    "pid": pid,
+                    "started_at": started_at,
+                    "log_path": str(log_path),
+                }
+            )
+        except Exception:
+            self._cleanup_failed_start(pid)
+            raise
         return StartResult(
             started=True,
             message="gateway_started_background_managed",
@@ -156,15 +160,17 @@ class PosixDaemonAdapter:
         lines = self._state_store.read_log_tail(tail=tail)
         if not lines:
             typer.echo("No gateway log output available yet.")
-            return 0
-
-        for line in lines:
-            typer.echo(line)
+            if not follow:
+                return 0
+        else:
+            for line in lines:
+                typer.echo(line)
 
         if not follow:
             return 0
 
         log_path = self._state_store.resolve_log_path()
+        log_path.touch(exist_ok=True)
         try:
             with log_path.open("r", encoding="utf-8", errors="replace") as handle:
                 handle.seek(0, os.SEEK_END)
@@ -176,6 +182,22 @@ class PosixDaemonAdapter:
                     self._time.sleep(0.5)
         except KeyboardInterrupt:
             return 130
+
+    def _cleanup_failed_start(self, pid: int) -> None:
+        self._state_store.clear_pid()
+
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return
+
+        if self._wait_for_exit(pid, 2):
+            return
+
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
 
     def _build_child_command(self, options: GatewayStartOptions) -> list[str]:
         command = [
