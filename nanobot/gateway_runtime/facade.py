@@ -104,6 +104,8 @@ class GatewayRuntimeFacade:
     def _resolve_recorded_policy_override(self) -> RuntimePolicy | None:
         if not self._prefer_recorded_mode:
             return None
+        if self._policy.reason.startswith("cli_override_"):
+            return None
         state = self._state_store.read_state() or {}
         recorded_mode = state.get("mode")
         if recorded_mode != RuntimeMode.FOREGROUND_LEGACY.value:

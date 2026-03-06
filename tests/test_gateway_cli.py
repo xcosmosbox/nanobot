@@ -595,3 +595,41 @@ def test_gateway_follow_up_commands_keep_legacy_semantics_for_linux_foreground_i
 
     assert logs_result.exit_code == 0
     assert "foreground mode" in logs_result.stdout.lower()
+
+
+def test_gateway_follow_up_background_flag_overrides_recorded_linux_legacy_state(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr("nanobot.cli.commands.platform.system", lambda: "Linux")
+    monkeypatch.setattr("nanobot.gateway_runtime.state_store.get_data_dir", lambda: tmp_path)
+
+    store = GatewayStateStore(data_dir=tmp_path)
+    store.write_state(
+        {
+            "mode": RuntimeMode.FOREGROUND_LEGACY.value,
+            "reason": "cli_override_foreground",
+            "platform": "Linux",
+            "rollout_stage": "default_on",
+        }
+    )
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.facade.LinuxDaemonAdapter",
+        _BackgroundStatusAdapter,
+        raising=False,
+    )
+
+    restart_result = runner.invoke(app, ["gateway", "restart", "--background"])
+    status_result = runner.invoke(app, ["gateway", "status", "--background"])
+    logs_result = runner.invoke(app, ["gateway", "logs", "--background", "--no-follow"])
+
+    assert restart_result.exit_code == 0
+    assert "background_managed" in restart_result.stdout.lower()
+    assert "pid: 4321" in restart_result.stdout.lower()
+
+    assert status_result.exit_code == 0
+    assert "mode: background_managed" in status_result.stdout.lower()
+    assert "pid: 4321" in status_result.stdout.lower()
+
+    assert logs_result.exit_code == 0
+    assert "gateway log target:" in logs_result.stdout.lower()
+    assert "pid: 4321" in logs_result.stdout.lower()
