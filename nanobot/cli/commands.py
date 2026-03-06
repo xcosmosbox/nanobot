@@ -495,6 +495,7 @@ def _build_gateway_runtime_facade(
     config_path: str | None = None,
     run_foreground_loop: Callable[[int, bool, str | None, str | None], None] | None = None,
     prefer_recorded_mode: bool = False,
+    preserve_live_legacy_restart_guard: bool = False,
 ):
     """Create runtime facade and resolved policy for current invocation."""
     from nanobot.gateway_runtime.facade import GatewayRuntimeFacade
@@ -518,6 +519,7 @@ def _build_gateway_runtime_facade(
         policy=resolved_policy,
         state_store=state_store,
         prefer_recorded_mode=prefer_recorded_mode,
+        preserve_live_legacy_restart_guard=preserve_live_legacy_restart_guard,
     )
     return facade, resolved_policy
 
@@ -665,6 +667,7 @@ def gateway_restart(
         config_path=config,
         run_foreground_loop=run_gateway_foreground_loop,
         prefer_recorded_mode=True,
+        preserve_live_legacy_restart_guard=True,
     )
     result = facade.restart(
         GatewayStartOptions(

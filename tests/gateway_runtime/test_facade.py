@@ -471,3 +471,97 @@ def test_facade_explicit_background_overrides_recorded_legacy_state(tmp_path, mo
     assert result.mode is RuntimeMode.BACKGROUND_MANAGED
     assert calls["linux_start"] == 1
     assert calls["legacy_start"] == 0
+
+
+def test_facade_restart_preserves_live_linux_legacy_guard_even_with_background_override(
+    tmp_path, monkeypatch
+) -> None:
+    calls = {"legacy_restart": 0, "linux_restart": 0}
+    store = GatewayStateStore(data_dir=tmp_path)
+    store.write_state(
+        {
+            "mode": RuntimeMode.FOREGROUND_LEGACY.value,
+            "reason": "cli_override_foreground",
+            "platform": "Linux",
+            "rollout_stage": "default_on",
+        }
+    )
+    store.write_pid(4321)
+
+    class LegacyAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            raise NotImplementedError
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            calls["legacy_restart"] += 1
+            return RestartResult(
+                restarted=False,
+                message="legacy_foreground_requires_manual_restart",
+                mode=RuntimeMode.FOREGROUND_LEGACY,
+            )
+
+        def status(self) -> GatewayStatus:
+            raise NotImplementedError
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    class LinuxAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            raise NotImplementedError
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            calls["linux_restart"] += 1
+            return RestartResult(
+                restarted=True,
+                message="gateway_restarted_background_managed",
+                mode=RuntimeMode.BACKGROUND_MANAGED,
+            )
+
+        def status(self) -> GatewayStatus:
+            raise NotImplementedError
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    monkeypatch.setattr("nanobot.gateway_runtime.facade.ForegroundLegacyAdapter", LegacyAdapter)
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.facade.LinuxDaemonAdapter",
+        LinuxAdapter,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        GatewayRuntimeFacade,
+        "_is_pid_running",
+        lambda self, pid: pid == 4321,
+    )
+
+    facade = GatewayRuntimeFacade(
+        policy=RuntimePolicy(
+            mode=RuntimeMode.BACKGROUND_MANAGED,
+            reason="cli_override_background",
+            platform="Linux",
+            rollout_stage="default_on",
+        ),
+        state_store=store,
+        prefer_recorded_mode=True,
+        preserve_live_legacy_restart_guard=True,
+    )
+
+    result = facade.restart(GatewayStartOptions(cli_mode="background"))
+
+    assert result.mode is RuntimeMode.FOREGROUND_LEGACY
+    assert calls["legacy_restart"] == 1
+    assert calls["linux_restart"] == 0

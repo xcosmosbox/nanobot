@@ -91,3 +91,31 @@ def test_logs_in_legacy_mode_prints_explanatory_hint(tmp_path, capsys) -> None:
     captured = capsys.readouterr()
     assert code == 0
     assert "foreground mode" in captured.out.lower()
+
+
+import os
+
+
+def test_start_records_current_pid_while_foreground_loop_is_running_and_clears_after(tmp_path) -> None:
+    store = GatewayStateStore(data_dir=tmp_path)
+    observed: dict[str, int | None] = {"during": None}
+
+    def run_foreground_loop(
+        port: int,
+        verbose: bool,
+        workspace: str | None,
+        config_path: str | None,
+    ) -> None:
+        observed["during"] = store.read_pid()
+
+    adapter = ForegroundLegacyAdapter(
+        run_foreground_loop=run_foreground_loop,
+        policy=_legacy_policy(),
+        state_store=store,
+    )
+
+    result = adapter.start(GatewayStartOptions())
+
+    assert result.started is True
+    assert observed["during"] == os.getpid()
+    assert store.read_pid() is None

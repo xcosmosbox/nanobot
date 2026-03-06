@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Callable
 
 from nanobot.gateway_runtime.adapters.base import RuntimeAdapter
@@ -34,6 +35,7 @@ class GatewayRuntimeFacade:
         state_store: GatewayStateStore | None = None,
         adapter: RuntimeAdapter | None = None,
         prefer_recorded_mode: bool = False,
+        preserve_live_legacy_restart_guard: bool = False,
     ):
         # policy/state_store/adapter are injectable for unit tests.
         # In normal runtime, defaults are resolved lazily from current env/platform.
@@ -41,6 +43,7 @@ class GatewayRuntimeFacade:
         self._state_store = state_store or GatewayStateStore()
         self._run_foreground_loop = run_foreground_loop
         self._prefer_recorded_mode = prefer_recorded_mode
+        self._preserve_live_legacy_restart_guard = preserve_live_legacy_restart_guard
         self._adapter = adapter or self._build_adapter()
 
     def start(self, options: GatewayStartOptions) -> StartResult:
@@ -104,18 +107,33 @@ class GatewayRuntimeFacade:
     def _resolve_recorded_policy_override(self) -> RuntimePolicy | None:
         if not self._prefer_recorded_mode:
             return None
-        if self._policy.reason.startswith("cli_override_"):
-            return None
         state = self._state_store.read_state() or {}
         recorded_mode = state.get("mode")
         if recorded_mode != RuntimeMode.FOREGROUND_LEGACY.value:
             return None
+        if self._policy.reason.startswith("cli_override_"):
+            if not self._preserve_live_legacy_restart_guard:
+                return None
+            pid = self._state_store.read_pid()
+            if pid is None or not self._is_pid_running(pid):
+                return None
         return RuntimePolicy(
             mode=RuntimeMode.FOREGROUND_LEGACY,
             reason=str(state.get("reason", self._policy.reason)),
             platform=str(state.get("platform", self._policy.platform)),
             rollout_stage=str(state.get("rollout_stage", self._policy.rollout_stage)),
         )
+
+    def _is_pid_running(self, pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return True
 
     def _build_legacy_adapter(self, *, policy: RuntimePolicy) -> RuntimeAdapter:
         return ForegroundLegacyAdapter(

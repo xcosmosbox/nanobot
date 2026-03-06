@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Callable
 
 import typer
@@ -56,12 +57,16 @@ class ForegroundLegacyAdapter:
                 "rollout_stage": self._policy.rollout_stage,
             }
         )
-        self._run_foreground_loop(
-            options.port,
-            options.verbose,
-            options.workspace,
-            options.config_path,
-        )
+        self._state_store.write_pid(os.getpid())
+        try:
+            self._run_foreground_loop(
+                options.port,
+                options.verbose,
+                options.workspace,
+                options.config_path,
+            )
+        finally:
+            self._state_store.clear_pid()
         return StartResult(
             started=True,
             message="gateway_started_foreground_legacy",
