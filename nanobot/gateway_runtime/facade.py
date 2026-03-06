@@ -33,12 +33,14 @@ class GatewayRuntimeFacade:
         policy: RuntimePolicy | None = None,
         state_store: GatewayStateStore | None = None,
         adapter: RuntimeAdapter | None = None,
+        prefer_recorded_mode: bool = False,
     ):
         # policy/state_store/adapter are injectable for unit tests.
         # In normal runtime, defaults are resolved lazily from current env/platform.
         self._policy = policy or resolve_runtime_policy()
         self._state_store = state_store or GatewayStateStore()
         self._run_foreground_loop = run_foreground_loop
+        self._prefer_recorded_mode = prefer_recorded_mode
         self._adapter = adapter or self._build_adapter()
 
     def start(self, options: GatewayStartOptions) -> StartResult:
@@ -74,6 +76,10 @@ class GatewayRuntimeFacade:
         if self._policy.mode is RuntimeMode.FOREGROUND_LEGACY:
             return self._build_legacy_adapter(policy=self._policy)
 
+        recorded_policy = self._resolve_recorded_policy_override()
+        if recorded_policy is not None:
+            return self._build_legacy_adapter(policy=recorded_policy)
+
         if self._policy.platform == "Darwin":
             return PosixDaemonAdapter(
                 policy=self._policy,
@@ -93,6 +99,21 @@ class GatewayRuntimeFacade:
             rollout_stage=self._policy.rollout_stage,
         )
         return self._build_legacy_adapter(policy=fallback_policy)
+
+
+    def _resolve_recorded_policy_override(self) -> RuntimePolicy | None:
+        if not self._prefer_recorded_mode:
+            return None
+        state = self._state_store.read_state() or {}
+        recorded_mode = state.get("mode")
+        if recorded_mode != RuntimeMode.FOREGROUND_LEGACY.value:
+            return None
+        return RuntimePolicy(
+            mode=RuntimeMode.FOREGROUND_LEGACY,
+            reason=str(state.get("reason", self._policy.reason)),
+            platform=str(state.get("platform", self._policy.platform)),
+            rollout_stage=str(state.get("rollout_stage", self._policy.rollout_stage)),
+        )
 
     def _build_legacy_adapter(self, *, policy: RuntimePolicy) -> RuntimeAdapter:
         return ForegroundLegacyAdapter(

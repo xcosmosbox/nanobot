@@ -100,7 +100,15 @@ class LinuxDaemonAdapter(PosixDaemonAdapter):
                 mode=RuntimeMode.BACKGROUND_MANAGED,
             )
 
-        pgid = self._extract_pgid(state, pid)
+        identity_valid, pgid = self._validate_process_identity(state, pid)
+        if not identity_valid:
+            self._state_store.clear_pid()
+            return StopResult(
+                stopped=False,
+                message="background_process_identity_mismatch",
+                mode=RuntimeMode.BACKGROUND_MANAGED,
+            )
+
         try:
             self._signal_process(pgid=pgid, pid=pid, sig=signal.SIGTERM)
         except ProcessLookupError:
@@ -138,8 +146,15 @@ class LinuxDaemonAdapter(PosixDaemonAdapter):
             reason = "stale_pid_not_running" if stale_pid else state.get("reason", self._policy.reason)
             pgid = None
         else:
-            reason = state.get("reason", self._policy.reason)
-            pgid = self._extract_pgid(state, pid)
+            identity_valid, pgid = self._validate_process_identity(state, pid)
+            if not identity_valid:
+                self._state_store.clear_pid()
+                pid = None
+                pgid = None
+                running = False
+                reason = "stale_pid_identity_mismatch"
+            else:
+                reason = state.get("reason", self._policy.reason)
 
         platform = state.get("platform", self._policy.platform)
         rollout_stage = state.get("rollout_stage", self._policy.rollout_stage)
@@ -173,6 +188,15 @@ class LinuxDaemonAdapter(PosixDaemonAdapter):
             self._signal_process(pgid=pgid, pid=pid, sig=signal.SIGKILL)
         except OSError:
             pass
+
+    def _validate_process_identity(self, state: dict[str, object], pid: int) -> tuple[bool, int | None]:
+        recorded_pgid = state.get("pgid")
+        if not isinstance(recorded_pgid, int):
+            return False, None
+        current_pgid = self._resolve_process_group_id(pid)
+        if current_pgid is None or current_pgid != recorded_pgid:
+            return False, None
+        return True, current_pgid
 
     def _extract_pgid(self, state: dict[str, object], pid: int) -> int | None:
         raw_pgid = state.get("pgid")

@@ -487,6 +487,10 @@ def test_gateway_status_targets_instance_scoped_runtime_files(monkeypatch, tmp_p
         lambda self, _pid: True,
         raising=False,
     )
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.adapters.linux_daemon.os.getpgid",
+        lambda _pid: 5555,
+    )
 
     key_a = build_gateway_instance_key(workspace="/tmp/work-a", config_path="/tmp/cfg-a.json")
     key_b = build_gateway_instance_key(workspace="/tmp/work-b", config_path="/tmp/cfg-b.json")
@@ -560,3 +564,34 @@ def test_gateway_start_writes_instance_scoped_state_files_in_linux_background_mo
     assert state_b["mode"] == "background_managed"
     assert state_a["workspace"] == "/tmp/work-a"
     assert state_b["workspace"] == "/tmp/work-b"
+
+
+def test_gateway_follow_up_commands_keep_legacy_semantics_for_linux_foreground_instance(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr("nanobot.cli.commands.platform.system", lambda: "Linux")
+    monkeypatch.setattr("nanobot.gateway_runtime.state_store.get_data_dir", lambda: tmp_path)
+
+    store = GatewayStateStore(data_dir=tmp_path)
+    store.write_state(
+        {
+            "mode": RuntimeMode.FOREGROUND_LEGACY.value,
+            "reason": "cli_override_foreground",
+            "platform": "Linux",
+            "rollout_stage": "default_on",
+        }
+    )
+
+    restart_result = runner.invoke(app, ["gateway", "restart"])
+    status_result = runner.invoke(app, ["gateway", "status"])
+    logs_result = runner.invoke(app, ["gateway", "logs", "--no-follow"])
+
+    assert restart_result.exit_code == 0
+    assert "legacy_foreground_requires_manual_restart" in restart_result.stdout.lower()
+
+    assert status_result.exit_code == 0
+    assert "mode: foreground_legacy" in status_result.stdout.lower()
+    assert "reason: cli_override_foreground" in status_result.stdout.lower()
+
+    assert logs_result.exit_code == 0
+    assert "foreground mode" in logs_result.stdout.lower()

@@ -251,3 +251,36 @@ def test_logs_follow_keeps_waiting_when_file_is_initially_empty(tmp_path, monkey
     out = capsys.readouterr().out
     assert code == 130
     assert "No gateway log output available yet." in out
+
+
+def test_stop_refuses_to_signal_when_recorded_pgid_mismatches_current_group(tmp_path, monkeypatch) -> None:
+    from nanobot.gateway_runtime.adapters.linux_daemon import LinuxDaemonAdapter
+
+    store = GatewayStateStore(data_dir=tmp_path)
+    store.write_pid(9911)
+    store.write_state({"pid": 9911, "pgid": 5511, "mode": RuntimeMode.BACKGROUND_MANAGED.value})
+    adapter = LinuxDaemonAdapter(policy=_background_policy(), state_store=store)
+
+    group_kills: list[tuple[int, int]] = []
+    pid_kills: list[tuple[int, int]] = []
+    monkeypatch.setattr(adapter, "_is_pid_running", lambda _pid: True)
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.adapters.linux_daemon.os.getpgid",
+        lambda _pid: 7788,
+    )
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.adapters.linux_daemon.os.killpg",
+        lambda pgid, sig: group_kills.append((pgid, sig)),
+    )
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.adapters.linux_daemon.os.kill",
+        lambda pid, sig: pid_kills.append((pid, sig)),
+    )
+
+    result = adapter.stop(timeout_s=1)
+
+    assert result.stopped is False
+    assert result.message == "background_process_identity_mismatch"
+    assert group_kills == []
+    assert pid_kills == []
+    assert store.read_pid() is None

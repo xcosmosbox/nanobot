@@ -494,6 +494,7 @@ def _build_gateway_runtime_facade(
     workspace: str | None = None,
     config_path: str | None = None,
     run_foreground_loop: Callable[[int, bool, str | None, str | None], None] | None = None,
+    prefer_recorded_mode: bool = False,
 ):
     """Create runtime facade and resolved policy for current invocation."""
     from nanobot.gateway_runtime.facade import GatewayRuntimeFacade
@@ -516,6 +517,7 @@ def _build_gateway_runtime_facade(
         run_foreground_loop=run_foreground_loop,
         policy=resolved_policy,
         state_store=state_store,
+        prefer_recorded_mode=prefer_recorded_mode,
     )
     return facade, resolved_policy
 
@@ -662,6 +664,7 @@ def gateway_restart(
         workspace=workspace,
         config_path=config,
         run_foreground_loop=run_gateway_foreground_loop,
+        prefer_recorded_mode=True,
     )
     result = facade.restart(
         GatewayStartOptions(
@@ -697,6 +700,7 @@ def gateway_status(
         cli_mode=cli_mode,
         workspace=workspace,
         config_path=config,
+        prefer_recorded_mode=True,
     )
     status = facade.status()
     _print_gateway_runtime_status(status)
@@ -719,6 +723,7 @@ def gateway_logs(
         cli_mode=cli_mode,
         workspace=workspace,
         config_path=config,
+        prefer_recorded_mode=True,
     )
     _print_gateway_runtime_status(
         facade.status(),
