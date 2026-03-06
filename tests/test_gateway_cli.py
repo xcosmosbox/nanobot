@@ -342,6 +342,11 @@ def test_gateway_restart_status_logs_commands_show_linux_background_info(monkeyp
 
     assert restart_result.exit_code == 0
     assert "background_managed" in restart_result.stdout.lower()
+    assert "gateway runtime after restart:" in restart_result.stdout.lower()
+    assert "reason: rollout_default_on" in restart_result.stdout.lower()
+    assert "pid: 4321" in restart_result.stdout.lower()
+    assert "pgid: 9876" in restart_result.stdout.lower()
+    assert "logs:" in restart_result.stdout.lower()
 
     assert status_result.exit_code == 0
     assert "mode: background_managed" in status_result.stdout.lower()
@@ -350,6 +355,11 @@ def test_gateway_restart_status_logs_commands_show_linux_background_info(monkeyp
     assert "pgid: 9876" in status_result.stdout.lower()
 
     assert logs_result.exit_code == 0
+    assert "gateway log target:" in logs_result.stdout.lower()
+    assert "reason: rollout_default_on" in logs_result.stdout.lower()
+    assert "pid: 4321" in logs_result.stdout.lower()
+    assert "pgid: 9876" in logs_result.stdout.lower()
+    assert "logs:" in logs_result.stdout.lower()
     assert "log tail=5 follow=false" in logs_result.stdout.lower()
 
 

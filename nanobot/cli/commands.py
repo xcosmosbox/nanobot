@@ -469,6 +469,25 @@ def _resolve_gateway_cli_mode(*, foreground: bool, background: bool) -> str | No
     return None
 
 
+def _print_gateway_runtime_status(status, *, title: str | None = None) -> None:
+    """Render a compact, explainable runtime status summary."""
+    if title is not None:
+        console.print(title)
+    console.print(f"Mode: {status.mode.value}")
+    console.print(f"Reason: {status.reason}")
+    console.print(f"Platform: {status.platform}")
+    console.print(f"Rollout: {status.rollout_stage}")
+    console.print(f"Running: {'yes' if status.running else 'no'}")
+    if status.pid is not None:
+        console.print(f"PID: {status.pid}")
+    if status.pgid is not None:
+        console.print(f"PGID: {status.pgid}")
+    if status.started_at is not None:
+        console.print(f"Started At: {status.started_at}")
+    if status.log_path is not None:
+        console.print(f"Logs: {status.log_path}")
+
+
 def _build_gateway_runtime_facade(
     *,
     cli_mode: str | None,
@@ -658,6 +677,10 @@ def gateway_restart(
         f"Gateway restart: {result.message} "
         f"(mode={policy.mode.value}, reason={policy.reason})"
     )
+    _print_gateway_runtime_status(
+        facade.status(),
+        title="Gateway runtime after restart:",
+    )
 
 
 @gateway_app.command("status")
@@ -676,20 +699,7 @@ def gateway_status(
         config_path=config,
     )
     status = facade.status()
-
-    console.print(f"Mode: {status.mode.value}")
-    console.print(f"Reason: {status.reason}")
-    console.print(f"Platform: {status.platform}")
-    console.print(f"Rollout: {status.rollout_stage}")
-    console.print(f"Running: {'yes' if status.running else 'no'}")
-    if status.pid is not None:
-        console.print(f"PID: {status.pid}")
-    if status.pgid is not None:
-        console.print(f"PGID: {status.pgid}")
-    if status.started_at is not None:
-        console.print(f"Started At: {status.started_at}")
-    if status.log_path is not None:
-        console.print(f"Logs: {status.log_path}")
+    _print_gateway_runtime_status(status)
 
 
 @gateway_app.command("logs")
@@ -709,6 +719,10 @@ def gateway_logs(
         cli_mode=cli_mode,
         workspace=workspace,
         config_path=config,
+    )
+    _print_gateway_runtime_status(
+        facade.status(),
+        title="Gateway log target:",
     )
     code = facade.logs(follow=follow, tail=tail)
     if code != 0:
