@@ -91,10 +91,12 @@ class ForegroundLegacyAdapter:
 
     def status(self) -> GatewayStatus:
         pid = self._state_store.read_pid()
-        # In legacy mode, running is best-effort from pid file only.
-        # Process-level verification is a later enhancement.
+        running = pid is not None and self._is_pid_running(pid)
+        if not running:
+            pid = None
+            self._state_store.clear_pid()
         return GatewayStatus(
-            running=pid is not None,
+            running=running,
             mode=RuntimeMode.FOREGROUND_LEGACY,
             reason=self._policy.reason,
             platform=self._policy.platform,
@@ -102,6 +104,18 @@ class ForegroundLegacyAdapter:
             pid=pid,
             log_path=self._state_store.resolve_log_path(),
         )
+
+
+    def _is_pid_running(self, pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        return True
 
     def logs(self, follow: bool = True, tail: int = 200) -> int:
         # Keep logs command available even when no daemon log stream exists.

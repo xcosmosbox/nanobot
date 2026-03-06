@@ -119,3 +119,24 @@ def test_start_records_current_pid_while_foreground_loop_is_running_and_clears_a
     assert result.started is True
     assert observed["during"] == os.getpid()
     assert store.read_pid() is None
+
+
+
+def test_status_clears_stale_pid_file_for_unclean_legacy_exit(tmp_path, monkeypatch) -> None:
+    store = GatewayStateStore(data_dir=tmp_path)
+    store.write_pid(4242)
+    adapter = ForegroundLegacyAdapter(
+        run_foreground_loop=lambda _port, _verbose, _workspace, _config_path: None,
+        policy=_legacy_policy(),
+        state_store=store,
+    )
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.adapters.foreground_legacy.os.kill",
+        lambda pid, sig: (_ for _ in ()).throw(ProcessLookupError),
+    )
+
+    status = adapter.status()
+
+    assert status.running is False
+    assert status.pid is None
+    assert store.read_pid() is None
