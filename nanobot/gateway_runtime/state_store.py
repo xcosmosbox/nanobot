@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import os
 import tempfile
 from pathlib import Path
@@ -116,7 +117,18 @@ def build_gateway_instance_key(
 def _normalize_optional_path(raw: str | None) -> str:
     if raw is None:
         return ""
+    if _looks_like_windows_path(raw):
+        expanded = os.path.expanduser(raw)
+        return ntpath.normcase(ntpath.normpath(expanded))
     return str(Path(raw).expanduser())
+
+
+def _looks_like_windows_path(raw: str) -> bool:
+    return (
+        raw.startswith("\\")
+        or (len(raw) >= 2 and raw[1] == ":" and raw[0].isalpha())
+        or "\\" in raw
+    )
 
 
 def _safe_instance_suffix(raw: str) -> str:

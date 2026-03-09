@@ -1045,7 +1045,7 @@ nanobot gateway --config ~/.nanobot-telegram/config.json --workspace /tmp/nanobo
 | `nanobot agent` | Interactive chat mode |
 | `nanobot agent --no-markdown` | Show plain-text replies |
 | `nanobot agent --logs` | Show runtime logs during chat |
-| `nanobot gateway` | Start gateway via runtime facade (macOS/Linux default managed background; Windows legacy foreground) |
+| `nanobot gateway` | Start gateway via runtime facade (macOS/Linux/Windows default managed background; kill switch available) |
 | `nanobot gateway restart` | Unified restart entry (legacy mode returns non-destructive hint) |
 | `nanobot gateway status` | Show gateway runtime mode/reason/platform/status |
 | `nanobot gateway logs` | Show gateway logs or legacy-mode hint |
@@ -1059,10 +1059,10 @@ Interactive mode exits: `exit`, `quit`, `/exit`, `/quit`, `:q`, or `Ctrl+D`.
 ### Gateway runtime compatibility (framework phase)
 
 - Unified gateway control semantics are available via `gateway`, `gateway restart`, `gateway status`, and `gateway logs`.
-- Current rollout keeps **Darwin and Linux in `background_managed` by default**, while Windows remains `foreground_legacy`.
+- Current rollout keeps **Darwin, Linux, and Windows in `background_managed` by default**.
 - `NANOBOT_GATEWAY_MODE=foreground|background` is supported as a runtime mode hint.
 - `NANOBOT_GATEWAY_KILL_SWITCH=1` force-enables legacy foreground mode for emergency rollback.
-- On macOS/Linux auto mode (`nanobot gateway`), daemon bootstrap failure falls back to legacy foreground with an explainable reason.
+- On macOS/Linux/Windows auto mode (`nanobot gateway`), daemon bootstrap failure falls back to legacy foreground with an explainable reason.
 - When explicitly requesting daemon mode (`nanobot gateway --background`), startup failures are surfaced as errors (no silent fallback).
 - Use `--workspace/-w` and `--config/-c` to target an instance consistently across `gateway`, `gateway restart`, `gateway status`, and `gateway logs`.
 - For `restart/status/logs`, pass control flags after the subcommand, for example `nanobot gateway status --workspace ~/.nanobot/botA`.

@@ -13,7 +13,7 @@ KILL_SWITCH_ENV_KEY = "NANOBOT_GATEWAY_KILL_SWITCH"
 ROLLOUT_BY_PLATFORM: dict[str, str] = {
     "Darwin": "default_on",
     "Linux": "default_on",
-    "Windows": "off",
+    "Windows": "default_on",
 }
 
 _TRUTHY_VALUES = {"1", "true", "yes", "on"}

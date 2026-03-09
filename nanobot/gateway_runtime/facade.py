@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 from typing import Callable
 
@@ -9,6 +10,7 @@ from nanobot.gateway_runtime.adapters.base import RuntimeAdapter
 from nanobot.gateway_runtime.adapters.foreground_legacy import ForegroundLegacyAdapter
 from nanobot.gateway_runtime.adapters.linux_daemon import LinuxDaemonAdapter
 from nanobot.gateway_runtime.adapters.posix_daemon import PosixDaemonAdapter
+from nanobot.gateway_runtime.adapters.windows_daemon import WindowsDaemonAdapter
 from nanobot.gateway_runtime.models import (
     GatewayStartOptions,
     GatewayStatus,
@@ -95,6 +97,12 @@ class GatewayRuntimeFacade:
                 state_store=self._state_store,
             )
 
+        if self._policy.platform == "Windows":
+            return WindowsDaemonAdapter(
+                policy=self._policy,
+                state_store=self._state_store,
+            )
+
         fallback_policy = RuntimePolicy(
             mode=RuntimeMode.FOREGROUND_LEGACY,
             reason="fallback_to_legacy_foreground",
@@ -125,6 +133,8 @@ class GatewayRuntimeFacade:
         )
 
     def _is_pid_running(self, pid: int) -> bool:
+        if self._policy.platform == "Windows":
+            return self._is_pid_running_windows(pid)
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
@@ -134,6 +144,22 @@ class GatewayRuntimeFacade:
         except OSError:
             return False
         return True
+
+    def _is_pid_running_windows(self, pid: int) -> bool:
+        process_query_limited_information = 0x1000
+        still_active = 259
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = ctypes.c_uint32()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == still_active
+        finally:
+            kernel32.CloseHandle(handle)
 
     def _build_legacy_adapter(self, *, policy: RuntimePolicy) -> RuntimeAdapter:
         return ForegroundLegacyAdapter(
@@ -145,7 +171,7 @@ class GatewayRuntimeFacade:
     def _should_auto_fallback(self, options: GatewayStartOptions) -> bool:
         if self._policy.mode is not RuntimeMode.BACKGROUND_MANAGED:
             return False
-        if self._policy.platform not in {"Darwin", "Linux"}:
+        if self._policy.platform not in {"Darwin", "Linux", "Windows"}:
             return False
         # auto mode: no explicit CLI override; keep command resilient on default path.
         return options.cli_mode is None

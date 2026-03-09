@@ -565,3 +565,341 @@ def test_facade_restart_preserves_live_linux_legacy_guard_even_with_background_o
     assert result.mode is RuntimeMode.FOREGROUND_LEGACY
     assert calls["legacy_restart"] == 1
     assert calls["linux_restart"] == 0
+
+
+def test_facade_selects_windows_daemon_adapter_for_background_mode(tmp_path, monkeypatch) -> None:
+    calls = {"windows_status": 0}
+    store = GatewayStateStore(data_dir=tmp_path)
+    captured: dict[str, object] = {}
+
+    class WindowsAdapter:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            raise NotImplementedError
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            raise NotImplementedError
+
+        def status(self) -> GatewayStatus:
+            calls["windows_status"] += 1
+            return GatewayStatus(
+                running=True,
+                mode=RuntimeMode.BACKGROUND_MANAGED,
+                reason="rollout_default_on",
+                platform="Windows",
+                rollout_stage="default_on",
+            )
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.facade.WindowsDaemonAdapter",
+        WindowsAdapter,
+        raising=False,
+    )
+
+    facade = GatewayRuntimeFacade(
+        policy=RuntimePolicy(
+            mode=RuntimeMode.BACKGROUND_MANAGED,
+            reason="rollout_default_on",
+            platform="Windows",
+            rollout_stage="default_on",
+        ),
+        state_store=store,
+    )
+
+    status = facade.status()
+
+    assert status.mode is RuntimeMode.BACKGROUND_MANAGED
+    assert calls["windows_status"] == 1
+    assert captured["state_store"] is store
+
+
+
+def test_facade_auto_mode_falls_back_to_legacy_on_windows_daemon_start_failure(tmp_path, monkeypatch) -> None:
+    calls = {"legacy_start": 0, "windows_start": 0}
+
+    class FailingWindowsAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            calls["windows_start"] += 1
+            raise RuntimeError("daemon start failed")
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            raise NotImplementedError
+
+        def status(self) -> GatewayStatus:
+            raise NotImplementedError
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    class LegacyAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            calls["legacy_start"] += 1
+            return StartResult(
+                started=True,
+                message="gateway_started_foreground_legacy",
+                mode=RuntimeMode.FOREGROUND_LEGACY,
+            )
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            raise NotImplementedError
+
+        def status(self) -> GatewayStatus:
+            raise NotImplementedError
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.facade.WindowsDaemonAdapter",
+        FailingWindowsAdapter,
+        raising=False,
+    )
+    monkeypatch.setattr("nanobot.gateway_runtime.facade.ForegroundLegacyAdapter", LegacyAdapter)
+
+    facade = GatewayRuntimeFacade(
+        policy=RuntimePolicy(
+            mode=RuntimeMode.BACKGROUND_MANAGED,
+            reason="rollout_default_on",
+            platform="Windows",
+            rollout_stage="default_on",
+        ),
+        state_store=GatewayStateStore(data_dir=tmp_path),
+    )
+
+    result = facade.start(GatewayStartOptions(cli_mode=None))
+
+    assert result.mode is RuntimeMode.FOREGROUND_LEGACY
+    assert calls == {"legacy_start": 1, "windows_start": 1}
+
+
+
+def test_facade_explicit_background_does_not_silently_fallback_on_windows(tmp_path, monkeypatch) -> None:
+    class FailingWindowsAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            raise RuntimeError("daemon start failed")
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            raise NotImplementedError
+
+        def status(self) -> GatewayStatus:
+            raise NotImplementedError
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.facade.WindowsDaemonAdapter",
+        FailingWindowsAdapter,
+        raising=False,
+    )
+
+    facade = GatewayRuntimeFacade(
+        policy=RuntimePolicy(
+            mode=RuntimeMode.BACKGROUND_MANAGED,
+            reason="cli_override_background",
+            platform="Windows",
+            rollout_stage="default_on",
+        ),
+        state_store=GatewayStateStore(data_dir=tmp_path),
+    )
+
+    with pytest.raises(RuntimeError, match="daemon start failed"):
+        facade.start(GatewayStartOptions(cli_mode="background"))
+
+
+
+def test_facade_kill_switch_policy_stays_on_legacy_and_does_not_enter_windows_adapter(
+    tmp_path, monkeypatch
+) -> None:
+    calls = {"legacy_status": 0, "windows_init": 0}
+
+    class LegacyAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            raise NotImplementedError
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            raise NotImplementedError
+
+        def status(self) -> GatewayStatus:
+            calls["legacy_status"] += 1
+            return GatewayStatus(
+                running=False,
+                mode=RuntimeMode.FOREGROUND_LEGACY,
+                reason="kill_switch_enabled",
+                platform="Windows",
+                rollout_stage="default_on",
+            )
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    class WindowsAdapter:
+        def __init__(self, **_kwargs) -> None:
+            calls["windows_init"] += 1
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            raise NotImplementedError
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            raise NotImplementedError
+
+        def status(self) -> GatewayStatus:
+            raise NotImplementedError
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    monkeypatch.setattr("nanobot.gateway_runtime.facade.ForegroundLegacyAdapter", LegacyAdapter)
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.facade.WindowsDaemonAdapter",
+        WindowsAdapter,
+        raising=False,
+    )
+
+    facade = GatewayRuntimeFacade(
+        policy=RuntimePolicy(
+            mode=RuntimeMode.FOREGROUND_LEGACY,
+            reason="kill_switch_enabled",
+            platform="Windows",
+            rollout_stage="default_on",
+        ),
+        state_store=GatewayStateStore(data_dir=tmp_path),
+    )
+
+    status = facade.status()
+
+    assert status.mode is RuntimeMode.FOREGROUND_LEGACY
+    assert calls == {"legacy_status": 1, "windows_init": 0}
+
+
+def test_facade_restart_background_preserves_live_windows_legacy_guard_without_posix_kill(
+    tmp_path, monkeypatch
+) -> None:
+    calls = {"legacy_restart": 0, "windows_restart": 0, "windows_probe": 0}
+    store = GatewayStateStore(data_dir=tmp_path)
+    store.write_state(
+        {
+            "mode": RuntimeMode.FOREGROUND_LEGACY.value,
+            "reason": "cli_override_foreground",
+            "platform": "Windows",
+            "rollout_stage": "default_on",
+        }
+    )
+    store.write_pid(4321)
+
+    class LegacyAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            raise NotImplementedError
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            calls["legacy_restart"] += 1
+            return RestartResult(
+                restarted=False,
+                message="legacy_foreground_requires_manual_restart",
+                mode=RuntimeMode.FOREGROUND_LEGACY,
+            )
+
+        def status(self) -> GatewayStatus:
+            raise NotImplementedError
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    class WindowsAdapter:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def start(self, _options: GatewayStartOptions) -> StartResult:
+            raise NotImplementedError
+
+        def stop(self, timeout_s: int = 20):
+            raise NotImplementedError
+
+        def restart(self, options: GatewayStartOptions, timeout_s: int = 20) -> RestartResult:
+            calls["windows_restart"] += 1
+            return RestartResult(
+                restarted=True,
+                message="gateway_restarted_background_managed",
+                mode=RuntimeMode.BACKGROUND_MANAGED,
+            )
+
+        def status(self) -> GatewayStatus:
+            raise NotImplementedError
+
+        def logs(self, follow: bool = True, tail: int = 200) -> int:
+            raise NotImplementedError
+
+    monkeypatch.setattr("nanobot.gateway_runtime.facade.ForegroundLegacyAdapter", LegacyAdapter)
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.facade.WindowsDaemonAdapter",
+        WindowsAdapter,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        GatewayRuntimeFacade,
+        "_is_pid_running_windows",
+        lambda self, pid: calls.__setitem__("windows_probe", calls["windows_probe"] + 1) or pid == 4321,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.facade.os.kill",
+        lambda pid, sig: (_ for _ in ()).throw(AssertionError("posix kill probe should not be used on Windows")),
+    )
+
+    facade = GatewayRuntimeFacade(
+        policy=RuntimePolicy(
+            mode=RuntimeMode.BACKGROUND_MANAGED,
+            reason="cli_override_background",
+            platform="Windows",
+            rollout_stage="default_on",
+        ),
+        state_store=store,
+        prefer_recorded_mode=True,
+        preserve_live_legacy_restart_guard=True,
+    )
+
+    result = facade.restart(GatewayStartOptions(cli_mode="background"))
+
+    assert result.mode is RuntimeMode.FOREGROUND_LEGACY
+    assert calls == {"legacy_restart": 1, "windows_restart": 0, "windows_probe": 1}

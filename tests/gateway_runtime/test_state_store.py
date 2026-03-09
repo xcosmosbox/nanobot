@@ -110,6 +110,20 @@ def test_build_instance_key_is_deterministic_and_input_sensitive() -> None:
     assert build_gateway_instance_key() is None
 
 
+def test_build_instance_key_normalizes_windows_equivalent_paths() -> None:
+    key_a = build_gateway_instance_key(
+        workspace=r"C:\\Bot",
+        config_path=r"C:\\Cfg\\gateway.json",
+    )
+    key_b = build_gateway_instance_key(
+        workspace=r"c:/bot",
+        config_path=r"c:/cfg/gateway.json",
+    )
+
+    assert key_a is not None
+    assert key_a == key_b
+
+
 def test_instance_scoped_runtime_files_do_not_collide(tmp_path) -> None:
     key_a = build_gateway_instance_key(
         workspace="/tmp/work-a",

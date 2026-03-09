@@ -19,22 +19,22 @@ def test_linux_rollout_defaults_to_background_managed() -> None:
     assert policy.platform == "Linux"
 
 
-def test_windows_rollout_defaults_to_foreground_legacy() -> None:
+def test_windows_rollout_defaults_to_background_managed() -> None:
     policy = resolve_runtime_policy(platform_name="Windows")
 
-    assert policy.mode is RuntimeMode.FOREGROUND_LEGACY
-    assert policy.rollout_stage == "off"
+    assert policy.mode is RuntimeMode.BACKGROUND_MANAGED
+    assert policy.rollout_stage == "default_on"
     assert policy.platform == "Windows"
 
 
-def test_env_background_falls_back_to_legacy_when_rollout_is_off() -> None:
+def test_windows_env_background_stays_background_when_rollout_is_on() -> None:
     policy = resolve_runtime_policy(
         platform_name="Windows",
         env={"NANOBOT_GATEWAY_MODE": "background"},
     )
 
-    assert policy.mode is RuntimeMode.FOREGROUND_LEGACY
-    assert policy.reason == "fallback_to_legacy_foreground"
+    assert policy.mode is RuntimeMode.BACKGROUND_MANAGED
+    assert policy.reason == "env_override_background"
 
 
 def test_kill_switch_forces_foreground_when_cli_not_set() -> None:
@@ -53,6 +53,16 @@ def test_kill_switch_forces_foreground_when_cli_not_set() -> None:
 def test_linux_kill_switch_forces_foreground_when_cli_not_set() -> None:
     policy = resolve_runtime_policy(
         platform_name="Linux",
+        env={"NANOBOT_GATEWAY_KILL_SWITCH": "1"},
+    )
+
+    assert policy.mode is RuntimeMode.FOREGROUND_LEGACY
+    assert policy.reason == "kill_switch_enabled"
+
+
+def test_windows_kill_switch_forces_foreground_when_cli_not_set() -> None:
+    policy = resolve_runtime_policy(
+        platform_name="Windows",
         env={"NANOBOT_GATEWAY_KILL_SWITCH": "1"},
     )
 
@@ -94,5 +104,5 @@ def test_empty_env_mapping_does_not_fallback_to_process_environment(monkeypatch)
         env={},
     )
 
-    assert policy.mode is RuntimeMode.FOREGROUND_LEGACY
-    assert policy.reason == "rollout_off"
+    assert policy.mode is RuntimeMode.BACKGROUND_MANAGED
+    assert policy.reason == "rollout_default_on"
