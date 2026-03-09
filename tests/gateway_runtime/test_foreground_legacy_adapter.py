@@ -12,6 +12,15 @@ def _legacy_policy() -> RuntimePolicy:
     )
 
 
+def _windows_legacy_policy() -> RuntimePolicy:
+    return RuntimePolicy(
+        mode=RuntimeMode.FOREGROUND_LEGACY,
+        reason="rollout_off",
+        platform="Windows",
+        rollout_stage="off",
+    )
+
+
 def test_start_delegates_to_foreground_runner_and_writes_state(tmp_path) -> None:
     called: dict[str, tuple[int, bool]] = {}
 
@@ -133,6 +142,59 @@ def test_status_clears_stale_pid_file_for_unclean_legacy_exit(tmp_path, monkeypa
     monkeypatch.setattr(
         "nanobot.gateway_runtime.adapters.foreground_legacy.os.kill",
         lambda pid, sig: (_ for _ in ()).throw(ProcessLookupError),
+    )
+
+    status = adapter.status()
+
+    assert status.running is False
+    assert status.pid is None
+    assert store.read_pid() is None
+
+
+
+def test_status_uses_windows_safe_liveness_probe_without_os_kill(tmp_path, monkeypatch) -> None:
+    store = GatewayStateStore(data_dir=tmp_path)
+    store.write_pid(4242)
+    adapter = ForegroundLegacyAdapter(
+        run_foreground_loop=lambda _port, _verbose, _workspace, _config_path: None,
+        policy=_windows_legacy_policy(),
+        state_store=store,
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_is_pid_running_windows",
+        lambda pid: pid == 4242,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.adapters.foreground_legacy.os.kill",
+        lambda pid, sig: (_ for _ in ()).throw(AssertionError("os.kill should not be used on Windows")),
+    )
+
+    status = adapter.status()
+
+    assert status.running is True
+    assert status.pid == 4242
+
+
+
+def test_status_clears_stale_pid_file_on_windows_without_os_kill(tmp_path, monkeypatch) -> None:
+    store = GatewayStateStore(data_dir=tmp_path)
+    store.write_pid(4242)
+    adapter = ForegroundLegacyAdapter(
+        run_foreground_loop=lambda _port, _verbose, _workspace, _config_path: None,
+        policy=_windows_legacy_policy(),
+        state_store=store,
+    )
+    monkeypatch.setattr(
+        adapter,
+        "_is_pid_running_windows",
+        lambda pid: False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "nanobot.gateway_runtime.adapters.foreground_legacy.os.kill",
+        lambda pid, sig: (_ for _ in ()).throw(AssertionError("os.kill should not be used on Windows")),
     )
 
     status = adapter.status()

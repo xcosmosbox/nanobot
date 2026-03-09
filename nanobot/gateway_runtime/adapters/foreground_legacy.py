@@ -107,6 +107,8 @@ class ForegroundLegacyAdapter:
 
 
     def _is_pid_running(self, pid: int) -> bool:
+        if self._policy.platform == "Windows":
+            return self._is_pid_running_windows(pid)
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
@@ -116,6 +118,25 @@ class ForegroundLegacyAdapter:
         except OSError:
             return False
         return True
+
+    def _is_pid_running_windows(self, pid: int) -> bool:
+        import ctypes
+        from ctypes import wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
 
     def logs(self, follow: bool = True, tail: int = 200) -> int:
         # Keep logs command available even when no daemon log stream exists.

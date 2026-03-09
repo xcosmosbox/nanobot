@@ -8,7 +8,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from nanobot.config.loader import get_data_dir
+from nanobot.config.paths import get_data_dir
 from nanobot.gateway_runtime.models import GatewayRuntimeState
 
 
